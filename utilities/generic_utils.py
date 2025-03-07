@@ -1,28 +1,29 @@
 import importlib
 from database.database import get_db
 
-# Dictionary mapping username to the correct models file
+# Dictionary mapping business name to the correct models file
 MODEL_FILES = {
-    "zing": "models/zing_db.py",  
-    "prathiksham": "models/pkm_db.py" 
+    "zing": "models.zing_db",  
+    "prathiksham": "models.pkm_db" 
 }
 
 
-def get_dynamic_db(username: str):
-    if username is None:
-        raise ValueError("Username is required")
-    return next(get_db(username))
+def get_dynamic_db(business: str):
+    if business is None:
+        raise ValueError("Business Name  is required")
+    return next(get_db(business))
 
 
-def get_models(username: str):
+def get_models(business: str):
     """Dynamically import the correct models file."""
-    if username not in MODEL_FILES:
-        raise ValueError(f"Models for {username} not found")
+    if business not in MODEL_FILES:
+        raise ValueError(f"Models for {business} not found")
     
-    module_name = MODEL_FILES[username]
+    module_name = MODEL_FILES[business]
     
     try:
         models_module = importlib.import_module(module_name)
+        print(models_module)
         return models_module
     except ModuleNotFoundError:
         raise ValueError(f"Models module {module_name} not found")

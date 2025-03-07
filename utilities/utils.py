@@ -2,39 +2,38 @@ import pandas as pd
 import numpy as np
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from database.models import Item, Sale, ViewsAtc
 
-def generate_inventory_summary(db: Session, days: int, days_to_predict: int):
+def generate_inventory_summary(db: Session, models, days: int, days_to_predict: int):
     """
     Generates an inventory summary using SQLAlchemy ORM.
     """
 
     # Query 1: Fetch all items
-    items = db.query(Item.Item_Id, Item.Item_Name, Item.Item_Type, Item.Category, 
-                     Item.Current_Stock, Item.launch_date, Item.Sale_Price, 
-                     Item.Sale_Discount, Item.batch).all()
+    items = db.query(models.Item.Item_Id, models.Item.Item_Name, models.Item.Item_Type, models.Item.Category, 
+                     models.Item.Current_Stock, models.Item.launch_date, models.Item.Sale_Price, 
+                     models.Item.Sale_Discount, models.Item.batch).all()
     t1 = pd.DataFrame(items, columns=["Item_Id", "Item_Name", "Item_Type", "Category", 
                                       "Current_Stock", "__Launch_Date", "Sale_Price", 
                                       "Sale_Discount", "__Batch"])
 
     # Query 2: Fetch sales data
-    sales = db.query(Sale.Item_Id, Sale.Date, Sale.Quantity, Sale.Total_Value).all()
+    sales = db.query(models.Sale.Item_Id, models.Sale.Date, models.Sale.Quantity, models.Sale.Total_Value).all()
     t2 = pd.DataFrame(sales, columns=["Item_Id", "Date", "Quantity", "Total_Value"])
 
     # Query 3: Fetch views and add-to-cart data
-    viewsatc = db.query(ViewsAtc.Item_Id, ViewsAtc.Date, ViewsAtc.Items_Viewed, ViewsAtc.Items_Addedtocart).all()
+    viewsatc = db.query(models.ViewsAtc.Item_Id, models.ViewsAtc.Date, models.ViewsAtc.Items_Viewed, models.ViewsAtc.Items_Addedtocart).all()
     t3 = pd.DataFrame(viewsatc, columns=["Item_Id", "Date", "Items_Viewed", "Items_Addedtocart"])
 
     # Query 4: Fetch first sold date
     first_sold_dates = (
-        db.query(Sale.Item_Id, func.min(Sale.Date).label("First_Sold_Date"))
-        .group_by(Sale.Item_Id)
+        db.query(models.Sale.Item_Id, func.min(models.Sale.Date).label("First_Sold_Date"))
+        .group_by(models.Sale.Item_Id)
         .all())    
     t4 = pd.DataFrame(first_sold_dates, columns=["Item_Id", "First_Sold_Date"])
 
     last_sold_dates = (
-        db.query(Sale.Item_Id, func.max(Sale.Date).label("Last_Sold_Date"))
-        .group_by(Sale.Item_Id)
+        db.query(models.Sale.Item_Id, func.max(models.Sale.Date).label("Last_Sold_Date"))
+        .group_by(models.Sale.Item_Id)
         .all()
     )
     t5 = pd.DataFrame(last_sold_dates, columns=["Item_Id", "Last_Sold_Date"])
@@ -220,5 +219,6 @@ def generate_inventory_summary(db: Session, days: int, days_to_predict: int):
     df_done["__Launch_Date"] = df_done["__Launch_Date"].dt.strftime('%Y-%m-%d')
 
     return df_done.sort_values(by="Item_Id").reset_index(drop=True)
+  
 
 
