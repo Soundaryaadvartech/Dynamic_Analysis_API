@@ -4,7 +4,8 @@ from database.database import get_db
 # Dictionary mapping business name to the correct models file
 MODEL_FILES = {
     "zing": "models.zing_db",  
-    "prathiksham": "models.pkm_db" 
+    "prathiksham": "models.pkm_db",
+    "beelittle":"models.bee_db"
 }
 
 

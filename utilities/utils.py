@@ -2,223 +2,243 @@ import pandas as pd
 import numpy as np
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from functios.period import process_period_data
 
-def generate_inventory_summary(db: Session, models, days: int, days_to_predict: int):
+
+def generate_inventory_summary(db: Session, models, days: int, group_by: str, business: str):
     """
-    Generates an inventory summary using SQLAlchemy ORM.
+    Generates an inventory summary using SQLAlchemy ORM with optimized performance.
     """
+    # Validate and set grouping columns
+    if group_by.lower() == "item_id":
+        grp = ["Item_Id"]
+    elif group_by.lower() == "item_name":
+        if business.lower() in ["prathiksham", "zing"]:
+            grp = ["Item_Name", "Item_Type", "Category"]
+        elif business.lower() == "beelittle":
+            grp = ["Item_Name", "Item_Type", "Product_Type"]
+    else:
+        raise ValueError("group_by must be either 'item_id' or 'item_name'")
 
-    # Query 1: Fetch all items
-    items = db.query(models.Item.Item_Id, models.Item.Item_Name, models.Item.Item_Type, models.Item.Category, 
-                     models.Item.Current_Stock, models.Item.launch_date, models.Item.Sale_Price, 
-                     models.Item.Sale_Discount, models.Item.batch).all()
-    t1 = pd.DataFrame(items, columns=["Item_Id", "Item_Name", "Item_Type", "Category", 
-                                      "Current_Stock", "__Launch_Date", "Sale_Price", 
-                                      "Sale_Discount", "__Batch"])
-
-    # Query 2: Fetch sales data
-    sales = db.query(models.Sale.Item_Id, models.Sale.Date, models.Sale.Quantity, models.Sale.Total_Value).all()
-    t2 = pd.DataFrame(sales, columns=["Item_Id", "Date", "Quantity", "Total_Value"])
-
-    # Query 3: Fetch views and add-to-cart data
-    viewsatc = db.query(models.ViewsAtc.Item_Id, models.ViewsAtc.Date, models.ViewsAtc.Items_Viewed, models.ViewsAtc.Items_Addedtocart).all()
-    t3 = pd.DataFrame(viewsatc, columns=["Item_Id", "Date", "Items_Viewed", "Items_Addedtocart"])
-
-    # Query 4: Fetch first sold date
-    first_sold_dates = (
-        db.query(models.Sale.Item_Id, func.min(models.Sale.Date).label("First_Sold_Date"))
-        .group_by(models.Sale.Item_Id)
-        .all())    
-    t4 = pd.DataFrame(first_sold_dates, columns=["Item_Id", "First_Sold_Date"])
-
-    last_sold_dates = (
-        db.query(models.Sale.Item_Id, func.max(models.Sale.Date).label("Last_Sold_Date"))
-        .group_by(models.Sale.Item_Id)
-        .all()
-    )
-    t5 = pd.DataFrame(last_sold_dates, columns=["Item_Id", "Last_Sold_Date"])
-
-    # Convert date columns to datetime format
-    t1["__Launch_Date"] = pd.to_datetime(t1["__Launch_Date"])
-    t1["Item_Id"] = t1["Item_Id"].astype("int")
-    t1["Sale_Price"] = t1["Sale_Price"].astype("int")
-    t1["Current_Stock"] = t1["Current_Stock"].astype("int")
-    t1["Sale_Discount"] = t1["Sale_Discount"].astype("int")
-    t5["Item_Id"] = t5["Item_Id"].astype("int")
-    t5["Last_Sold_Date"] = pd.to_datetime(t5["Last_Sold_Date"])
-
-    # Merge First Sold Date
-    t1 = pd.merge(t1, t4, how="left", on="Item_Id")
-    t1["__Launch_Date"].fillna(t1["First_Sold_Date"], inplace=True)
-
-    # Comprehensive Item Summary Function
-    def get_item_summary(t1, t2, t3, days):
-        # Convert dates to datetime
-        t1['__Launch_Date'] = pd.to_datetime(t1['__Launch_Date'])
-        t2['Date'] = pd.to_datetime(t2['Date'])
-        t3['Date'] = pd.to_datetime(t3['Date'])
-        t3["Item_Id"] = t3["Item_Id"].astype("int")
-
-        # Get minimum launch date for each Item_Name
-        item_min_launch_date = t1.groupby(['Item_Name',"Item_Type","Category"])['__Launch_Date'].min().reset_index()
-        t1 = t1.merge(item_min_launch_date, on='Item_Name', suffixes=('', '_Min'))
-
-        # Calculate date range
-        t1['Start_Date'] = t1['__Launch_Date_Min']
-        t1['End_Date'] = t1['Start_Date'] + pd.to_timedelta(days, unit='D')
-
-        # Filter data based on date range
-        t2 = t2.merge(t1[['Item_Id', 'Item_Name','Item_Type','Category', 'Start_Date', 'End_Date']], on='Item_Id', how='inner')
-        t3 = t3.merge(t1[['Item_Id', 'Item_Name','Item_Type','Category', 'Start_Date', 'End_Date']], on='Item_Id', how='inner')
-
-        t2_filtered = t2[(t2['Date'] >= t2['Start_Date']) & (t2['Date'] <= t2['End_Date'])]
-        t3_filtered = t3[(t3['Date'] >= t3['Start_Date']) & (t3['Date'] <= t3['End_Date'])]
-
-        # Aggregate data
-        t1_agg = t1.groupby(['Item_Name','Item_Type','Category'], as_index=False)['Current_Stock'].sum()
-        t2_agg = t2_filtered.groupby(['Item_Name','Item_Type','Category'], as_index=False)[['Quantity', 'Total_Value']].sum()
-        t3_agg = t3_filtered.groupby(['Item_Name','Item_Type','Category'], as_index=False)[['Items_Viewed', 'Items_Addedtocart']].sum()
-
-        # Merge aggregated values
-        final_df = t1_agg.merge(t2_agg, on=['Item_Name','Item_Type','Category'], how='left')
-        final_df = final_df.merge(t3_agg, on=['Item_Name','Item_Type','Category'], how='left')
-        final_df = final_df.fillna(0)
-
-        return final_df
-
-    # Generate initial summary
-    df = get_item_summary(t1, t2, t3, days)
-
-    # Calculate total quantity sold per item
-    temp_t2 = t2.groupby("Item_Id").agg({"Quantity": "sum"}).rename(columns={"Quantity": "Alltime_Total_Quantity"}).reset_index()
-    temp_merged = pd.merge(t1, temp_t2, how="left", on="Item_Id")
-    temp_quan = temp_merged.groupby(['Item_Name','Item_Type','Category']).agg({"Alltime_Total_Quantity":"sum"}).reset_index()
-    temp_curr = t1.groupby(['Item_Name','Item_Type','Category']).agg({"Current_Stock":"sum","Sale_Discount":"mean"}).reset_index()
-
-    # Calculate total stock
-    temp_total = pd.merge(temp_curr, temp_quan, how="inner", on=['Item_Name','Item_Type','Category'])
-    temp_total["Total_Stock"] = temp_total["Alltime_Total_Quantity"] + temp_total["Current_Stock"]
+    # Set category column based on business
+    colu = "Product_Type" if business.lower() == "beelittle" else "Category"
     
+    # Fetch only the necessary columns for items based on business type
+    common_columns = ["Item_Id", "Item_Name", "Item_Type", "Item_Code", 
+                      "Current_Stock", "launch_date", "Sale_Price", "Sale_Discount", "batch"]
     
-    # Merge and calculate metrics
-    df_final = df.merge(temp_total[["Item_Name","Item_Type","Category","Total_Stock","Alltime_Total_Quantity","Sale_Discount"]], how="left", on=['Item_Name','Item_Type','Category'])
-    df_final["Stock_Sold_Percentage"] = round((df_final["Quantity"]/df_final["Total_Stock"] * 100),2).fillna(0)
-    
-
-    # Add additional details
-    t1_unique = t1[["Item_Name", "Item_Type","Category"]].drop_duplicates()
-    
-    df_final = pd.merge(df_final, t1_unique, how="inner", on=['Item_Name','Item_Type','Category'])
-    t1_Launch = t1.groupby(['Item_Name','Item_Type','Category']).agg({"__Launch_Date":"min"}).reset_index()
-    t1_Launch['days_since_launch'] = (pd.to_datetime('today') - t1_Launch['__Launch_Date']).dt.days
-    df_final = pd.merge(df_final, t1_Launch, how="inner", on=['Item_Name','Item_Type',"Category"])
-    t3_total = t3.groupby(["Item_Id"]).agg({"Items_Viewed":"sum","Items_Addedtocart":"sum"}).rename(columns={"Items_Addedtocart": "Alltime_Items_Addedtocart","Items_Viewed":"Alltime_Items_Viewed"}).reset_index()
-    t3_toatl = pd.merge(t1, t3_total, how="left", on="Item_Id")
-    
-    temp_t3 = t3_toatl.groupby(['Item_Name','Item_Type','Category']).agg({"Alltime_Items_Addedtocart":"sum","Alltime_Items_Viewed":"sum"}).reset_index()
-    
-    df_final = df_final.merge(temp_t3[["Item_Name","Item_Type","Category","Alltime_Items_Addedtocart","Alltime_Items_Viewed"]], how="left", on=['Item_Name','Item_Type','Category'])
-    t1_sale_price = t1.groupby(['Item_Name','Item_Type','Category']).agg({"Sale_Price":"mean"}).reset_index()
-    
-    df_final = pd.merge(df_final, t1_sale_price, how="inner", on=['Item_Name','Item_Type','Category'])
-    
-
-    
-
-    # Get minimum Item_Id for each Item_Name
-    t1_min_id = t1.groupby(['Item_Name','Item_Type','Category']).agg({"Item_Id":"min"}).reset_index()
-    df_final = pd.merge(df_final, t1_min_id, how="inner", on=['Item_Name','Item_Type','Category'])
+    if business.lower() in ["prathiksham", "zing"]:
+        item_query = db.query(models.Item.Item_Id, models.Item.Item_Name, models.Item.Item_Type, 
+                             models.Item.Item_Code, models.Item.Category, 
+                             models.Item.Current_Stock, models.Item.launch_date, 
+                             models.Item.Sale_Price, models.Item.Sale_Discount, models.Item.batch)
+        columns = ["Item_Id", "Item_Name", "Item_Type", "Item_Code", "Category", 
+                  "Current_Stock", "__Launch_Date", "Sale_Price", "Sale_Discount", "__Batch"]
+    else:  # beelittle
+        item_query = db.query(models.Item.Item_Id, models.Item.Item_Name, models.Item.Item_Type, 
+                             models.Item.Item_Code, models.Item.Product_Type, 
+                             models.Item.Current_Stock, models.Item.launch_date, 
+                             models.Item.Sale_Price, models.Item.Sale_Discount, models.Item.batch)
+        columns = ["Item_Id", "Item_Name", "Item_Type", "Item_Code", "Product_Type", 
+                  "Current_Stock", "__Launch_Date", "Sale_Price", "Sale_Discount", "__Batch"]
         
-    df_final = df_final.merge(t5,how="left",on = "Item_Id")
     
-    df_final['Days_Sold_Out_Past'] = df_final.apply(
-                lambda row: (row['Last_Sold_Date'] - row['__Launch_Date']).days if row['Current_Stock'] == 0 else 0,
-                    axis=1
-                            ).fillna(0)
-    df_final["Alltime_perday_Quantity"] = (np.where(
-                                                    df_final["Alltime_Total_Quantity"] == 0, 
-                                                    round(df_final["Alltime_Total_Quantity"] / df_final["Days_Sold_Out_Past"], 2), 
-                                                    round(df_final["Alltime_Total_Quantity"] / df_final["days_since_launch"], 2)
-                                                ))
-    df_final.Alltime_perday_Quantity.fillna(0,inplace=True)
+    # Execute all database queries upfront to minimize DB round trips
+    items = item_query.all()
+    t1 = pd.DataFrame(items, columns=columns)
     
+    # Only fetch needed attributes for dt dataframe
+    if business.lower() == "prathiksham":
+        dt_attrs = ["Item_Id", "Item_Name", "Item_Type", "Category", 
+                    "Colour", "Fabric", "Fit", "Lining", "Neck", "Size", "Sleeve", "Pack"]
+    elif business.lower() == "zing":
+        dt_attrs = ["Item_Id", "Item_Name", "Item_Type", "Category", 
+                    "Colour", "Fabric", "Fit", "Neck", "Occasion", "Print", "Size", "Sleeve"]
+    else:  # beelittle
+        dt_attrs = ["Item_Id", "Item_Name", "Item_Type", "Age", "Bottom", "Bundles", "Fabric",
+                   "Filling", "Gender", "Pack_Size", "Pattern", "Size", "Sleeve", "Style", 
+                   "Top", "Weave_Type", "Weight", "Width"]
     
-    # Calculate stock values
-    df_final["Alltime_Total_Quantity_Value"] =df_final["Alltime_Total_Quantity"]* (df_final["Sale_Price"] *((100-df_final["Sale_Discount"])/100)).fillna(0)
-    df_final["Current_Stock_Value"] = df_final["Current_Stock"] * (df_final["Sale_Price"] *((100-df_final["Sale_Discount"])/100)).fillna(0)
-    df_final.rename(columns={"Quantity":"Quantity_sold", "Total_Value":"Sold_Quantity_Value"}, inplace=True)
-    df_final["Total_Stock_Value"] = ((df_final["Sale_Price"] *((100-df_final["Sale_Discount"])/100))  * df_final["Total_Stock"]).fillna(0)
-    
-    df_final["Alltime_perday_View"] = round((df_final["Alltime_Items_Viewed"]/df_final["days_since_launch"]),2).fillna(0)
-    df_final["Alltime_perday_atc"] = round((df_final["Alltime_Items_Addedtocart"]/df_final["days_since_launch"]),2).fillna(0)
-    df_final["Total_Stock_Sold_Percentage"] = round((df_final["Alltime_Total_Quantity"]/df_final["Total_Stock"] *100),2).fillna(0)
-    df_final["perday_view"] = np.where(df_final['days_since_launch'] > days, df_final['Items_Viewed'] / days, df_final['Items_Viewed'] / df_final["days_since_launch"])
-    df_final.perday_view.fillna(0,inplace=True)
-    df_final["perday_atc"] =np.where(df_final['days_since_launch'] > days, df_final['Items_Viewed'] / days, df_final['Items_Addedtocart'] / df_final["days_since_launch"])
-    df_final.perday_atc.fillna(0,inplace=True)
-    df_final["Projected_Days_to_Sellout"] = df_final["Current_Stock"]/df_final["Alltime_perday_Quantity"]
-    column_name = f"Predicted_Quantity_Next{days_to_predict}Days"
-    df_final[column_name] = np.where(
-                    df_final["Current_Stock"] != 0, 
-                    df_final["Alltime_perday_Quantity"] * days_to_predict, 
-                    0  # If Current_Stock is 0, prediction will be set to 0
-                )
-    
-    
-    t1_final = t1.groupby(["Item_Name", "Item_Type","Category"]).apply(
-            lambda group: pd.Series({
-                'Sale_Price_After_Discount': (group['Sale_Price'] * ((100 - group['Sale_Discount']) / 100)).mean(),
-                'Sale_Discounts': ','.join(group['Sale_Discount'].unique().astype(str))  # Use unique() to avoid duplicates
-            })
-        ).reset_index()
-    
-    df_final = df_final.merge(t1_final,how="left",on=["Item_Name","Item_Type","Category"])
-    
-    
-
-
-    # Final selection of columns
-    df_done = df_final[[
-                        "Item_Id", 
-                        "Item_Name", 
-                        "Item_Type", 
-                        "Category", 
-                        "__Launch_Date", 
-                        "days_since_launch", 
-                        "Projected_Days_to_Sellout", 
-                        "Days_Sold_Out_Past",
-                        "Current_Stock", 
-                        "Total_Stock", 
-                        "Current_Stock_Value", 
-                        "Total_Stock_Value",
-                        "Sale_Price", 
-                        "Sale_Discounts", 
-                        "Sale_Price_After_Discount", 
-                        "Quantity_sold", 
-                        "Sold_Quantity_Value", 
-                        "Alltime_Total_Quantity", 
-                        "Alltime_Total_Quantity_Value",
-                        "Alltime_perday_Quantity",  
-                        "Items_Viewed", 
-                        "perday_view", 
-                        "Alltime_Items_Viewed", 
-                        "Alltime_perday_View", 
-                        "Items_Addedtocart", 
-                        "perday_atc", 
-                        "Alltime_Items_Addedtocart", 
-                        "Alltime_perday_atc",
-                        "Stock_Sold_Percentage", 
-                        "Total_Stock_Sold_Percentage",column_name]]
-    
-    
-                    
-
-
-    numeric_cols = df_done.select_dtypes(include=['number']).columns
-    df_done.loc[:, numeric_cols] = df_done[numeric_cols].round(2)
-    df_done["__Launch_Date"] = df_done["__Launch_Date"].dt.strftime('%Y-%m-%d')
-
-    return df_done.sort_values(by="Item_Id").reset_index(drop=True)
+    # Fetch attributes for dt only if needed for variations
+    if group_by.lower() == "item_id":
+        dt_items = db.query(*[getattr(models.Item, attr) for attr in dt_attrs]).all()
+        dt = pd.DataFrame(dt_items, columns=dt_attrs)
   
+    # Batch all database queries together
+    sales = db.query(models.Sale.Item_Id, models.Sale.Date, models.Sale.Quantity, models.Sale.Total_Value).all()
+    viewsatc = db.query(models.ViewsAtc.Item_Id, models.ViewsAtc.Date, models.ViewsAtc.Items_Viewed, models.ViewsAtc.Items_Addedtocart).all()
+    first_sold_dates = db.query(models.Sale.Item_Id, func.min(models.Sale.Date).label("First_Sold_Date")).group_by(models.Sale.Item_Id).all()
+    last_sold_dates = db.query(models.Sale.Item_Id, func.max(models.Sale.Date).label("Last_Sold_Date")).group_by(models.Sale.Item_Id).all()
+    
+    # Convert to dataframes
+    t2 = pd.DataFrame(sales, columns=["Item_Id", "Date", "Quantity", "Total_Value"])
+    t3 = pd.DataFrame(viewsatc, columns=["Item_Id", "Date", "Items_Viewed", "Items_Addedtocart"])
+    t4 = pd.DataFrame(first_sold_dates, columns=["Item_Id", "First_Sold_Date"])
+    t5 = pd.DataFrame(last_sold_dates, columns=["Item_Id", "Last_Sold_Date"])
+    
+    # Preprocess data types in one batch to avoid redundant conversions
+    t1["__Launch_Date"] = pd.to_datetime(t1["__Launch_Date"])
+    t1["Item_Id"] = t1["Item_Id"].astype(int)
+    t1["Sale_Price"] = t1["Sale_Price"].astype(int)
+    t1["Current_Stock"] = t1["Current_Stock"].astype(int)
+    t1["Sale_Discount"] = t1["Sale_Discount"].astype(float)
+    t2["Date"] = pd.to_datetime(t2["Date"])
+    t3["Date"] = pd.to_datetime(t3["Date"])
+    t3["Item_Id"] = t3["Item_Id"].astype(int)
+    t5["Item_Id"] = t5["Item_Id"].astype(int)
+    t5["Last_Sold_Date"] = pd.to_datetime(t5["Last_Sold_Date"])
+    
+    # Merge first sold date
+    t1 = pd.merge(t1, t4, how="left", on="Item_Id")
+    t1["__Launch_Date"] = t1["__Launch_Date"].fillna(t1["First_Sold_Date"])
+    
+    # Pre-calculate all-time aggregations to avoid redundant calculations
+    if group_by.lower() == "item_id":
+        temp_t2 = t2.groupby("Item_Id").agg({"Quantity": "sum"}).rename(columns={"Quantity": "Alltime_Total_Quantity"}).reset_index()
+        t3_total = t3.groupby("Item_Id").agg({
+            "Items_Viewed": "sum",
+            "Items_Addedtocart": "sum"
+        }).rename(columns={
+            "Items_Addedtocart": "Alltime_Items_Addedtocart",
+            "Items_Viewed": "Alltime_Items_Viewed"
+        }).reset_index()
+    else:
+        # For item_name grouping, add the grouping columns first
+        t2_with_groups = pd.merge(t2, t1[['Item_Id'] + grp].drop_duplicates(), on='Item_Id', how='left')
+        t3_with_groups = pd.merge(t3, t1[['Item_Id'] + grp].drop_duplicates(), on='Item_Id', how='left')
+        
+        temp_t2 = t2_with_groups.groupby(grp).agg({"Quantity": "sum"}).rename(columns={"Quantity": "Alltime_Total_Quantity"}).reset_index()
+        t3_total = t3_with_groups.groupby(grp).agg({
+            "Items_Viewed": "sum",
+            "Items_Addedtocart": "sum"
+        }).rename(columns={
+            "Items_Addedtocart": "Alltime_Items_Addedtocart",
+            "Items_Viewed": "Alltime_Items_Viewed"
+        }).reset_index()
+    
+    # Create variations function optimized for performance
+    
+    
+    # Optimized item summary function
+    def get_item_summary(t1, t2, t3, start_offset, end_offset):
+        # Calculate date range for each item
+        t1['Start_Date'] = t1['__Launch_Date'] + pd.to_timedelta(start_offset, unit='D')
+        t1['End_Date'] = t1['__Launch_Date'] + pd.to_timedelta(end_offset, unit='D')
+        t1['Period_Days'] = end_offset - start_offset
+        
+        get_lst = grp + ['Start_Date', 'End_Date']
+        
+        # For item_name grouping, create group columns in t2 and t3 if not already done
+        if group_by.lower() == "item_name" and 'Item_Name' not in t2.columns:
+            # Add the grouping columns to t2 and t3 (if they haven't been added above)
+            grp_mapping = t1[['Item_Id'] + grp].drop_duplicates()
+            t2 = pd.merge(t2, grp_mapping, on='Item_Id', how='left')
+            t3 = pd.merge(t3, grp_mapping, on='Item_Id', how='left')
+        
+        # Filter data based on date range
+        join_cols = 'Item_Id' if group_by.lower() == "item_id" else grp
+        
+        # Use vectorized operations for filtering
+        t2_merge = pd.merge(t2, t1[get_lst], on=join_cols, how='inner')
+        t3_merge = pd.merge(t3, t1[get_lst], on=join_cols, how='inner')
+        
+        t2_filtered = t2_merge[(t2_merge['Date'] >= t2_merge['Start_Date']) & (t2_merge['Date'] <= t2_merge['End_Date'])]
+        t3_filtered = t3_merge[(t3_merge['Date'] >= t3_merge['Start_Date']) & (t3_merge['Date'] <= t3_merge['End_Date'])]
+        
+        # Aggregate data by grouping columns - use optimized agg with dict
+        agg_dict = {
+            'Item_Id': 'first' if group_by.lower() == "item_name" else 'first',
+            'Item_Code': 'first',
+            'Current_Stock': 'sum',
+            '__Launch_Date': 'min',
+            'Period_Days': 'first',
+            'Sale_Price': 'mean',
+            'Sale_Discount': 'mean'
+        }
+        
+        t1_agg = t1.groupby(grp, as_index=False).agg(agg_dict)
+        t2_agg = t2_filtered.groupby(grp, as_index=False)[['Quantity', 'Total_Value']].sum()
+        t3_agg = t3_filtered.groupby(grp, as_index=False)[['Items_Viewed', 'Items_Addedtocart']].sum()
+        
+        # Merge using one operation when possible
+        period_df = pd.merge(t1_agg, t2_agg, on=join_cols, how='left')
+        period_df = pd.merge(period_df, t3_agg, on=join_cols, how='left')
+        
+        # Fill NA values all at once
+        period_df = period_df.fillna(0)
+        
+        return period_df
+    
+    
+    
+    # Generate summaries for both periods
+    first_period_df = get_item_summary(t1, t2, t3, 0, days)
+ 
+    second_period_df = get_item_summary(t1, t2, t3, days, 2 * days)
 
+    # Process both periods
+    first_period_results = process_period_data(t1,t2,t3,t4,t5,temp_t2,t3_total,dt_attrs,colu,days,first_period_df,"first_period",group_by,grp)
+    
+    
+    second_period_results = process_period_data(t1,t2,t3,t4,t5,temp_t2,t3_total,dt_attrs,colu,days,second_period_df,"second_period",group_by,grp)
+   
+    
+    # Ensure both dataframes have necessary columns for item_id grouping
+    if group_by.lower() == "item_id":
+        cols_to_merge = ["Item_Id", "Item_Name", "Item_Type", colu]
+        first_period_results = pd.merge(first_period_results, t1[cols_to_merge].drop_duplicates(), on="Item_Id", how="left")
+        second_period_results = pd.merge(second_period_results, t1[cols_to_merge].drop_duplicates(), on="Item_Id", how="left")
+    
+    # Define common columns for the combined results
+    common_cols = [
+        "Item_Name", "Item_Type", colu, "__Launch_Date", 
+        "days_since_launch", "Projected_Days_to_Sellout", "Days_Sold_Out_Past", 
+        "Current_Stock", "Total_Stock", "Current_Stock_Value", "Total_Stock_Value", 
+        "Sale_Price", "Sale_Discount", "Sale_Price_After_Discount", "Alltime_Total_Quantity",
+        "Alltime_Total_Quantity_Value", "Alltime_Perday_Quantity", "Alltime_Items_Viewed",
+        "Alltime_Perday_View", "Alltime_Items_Addedtocart", "Alltime_Perday_ATC",
+        "Total_Stock_Sold_Percentage", "Variations"
+    ]
+    
+    # Add Item_Id or other columns based on grouping
+    if group_by.lower() == "item_id":
+        common_cols = ["Item_Id", "Item_Code"] + common_cols
+    else:
+        common_cols = ["Item_Id"] + common_cols
+    
+    # Get period-specific columns
+    first_period_specific_cols = [col for col in first_period_results.columns 
+                                 if col.startswith("first_period") or 
+                                 (col.startswith("Predicted_Quantity_Next") and "first_period" in col)]
+    
+    second_period_specific_cols = [col for col in second_period_results.columns 
+                                  if col.startswith("second_period") or 
+                                  (col.startswith("Predicted_Quantity_Next") and "second_period" in col)]
+    
+    # Create combined results using a single merge operation when possible
+    combined_results = first_period_results[common_cols].copy()
+    
+    # Add first period specific columns
+    for col in first_period_specific_cols:
+        combined_results[col] = first_period_results[col]
+    
+    # Add second period specific columns with a single merge
+    join_cols = ['Item_Id'] if group_by.lower() == "item_id" else grp
+    second_period_cols = join_cols + second_period_specific_cols
+    combined_results = pd.merge(combined_results, second_period_results[second_period_cols], on=join_cols, how='left')
+    
+    # Final formatting - do this in bulk
+    # Round numeric columns
+    numeric_cols = combined_results.select_dtypes(include=['number']).columns
+    combined_results[numeric_cols] = combined_results[numeric_cols].round(2)
+    
+    # Format date columns if they exist
+    if "__Launch_Date" in combined_results.columns and not combined_results["__Launch_Date"].empty:
+        if pd.api.types.is_datetime64_any_dtype(combined_results["__Launch_Date"]):
+            combined_results["__Launch_Date"] = combined_results["__Launch_Date"].dt.strftime('%Y-%m-%d')
+    
+    # Sort by primary grouping column
+    
+    combined_results = combined_results.sort_values(by="Item_Id").reset_index(drop=True)
 
+    return combined_results

@@ -16,7 +16,8 @@ DB_HOST = os.getenv("DB_HOST")
 # Dictionary of database connections
 DATABASES = {
     "zing": f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/zing",
-    "prathiksham": f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/prathiksham"
+    "prathiksham": f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/prathiksham",
+    "beelittle": f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/beelittle"
 }
 
 # Maintain separate session makers for each DB

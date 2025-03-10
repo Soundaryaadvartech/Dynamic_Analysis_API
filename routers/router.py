@@ -12,12 +12,12 @@ from utilities.generic_utils import get_dynamic_db, get_models
 router = APIRouter()
 
 @router.get("/inventory_summary")
-def inventory_summary(business: str, days: Optional[int] = None, days_to_predict: Optional[int] = None, db:Session = Depends(get_dynamic_db)):
+def inventory_summary(business: str, days: Optional[int] = None, group_by: Optional[str] = None, db:Session = Depends(get_dynamic_db)):
     try:
         days = days or 60
-        days_to_predict = days_to_predict or 30
+        group_by = group_by or "Item_Id"
         models = get_models(business)
-        summary_df = generate_inventory_summary(db, models, days, days_to_predict)
+        summary_df = generate_inventory_summary(db, models, days, group_by,business)
 
         return JSONResponse(
             status_code=status.HTTP_200_OK,
