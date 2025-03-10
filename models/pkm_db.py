@@ -22,7 +22,6 @@ class Item(Base):
     Lining = Column(String(255), nullable=True)
     Neck = Column(String(255), nullable=True)
     Occasion = Column(String(255), nullable=True)
-    Offer = Column(String(255), nullable=True)
     Print = Column(String(255), nullable=True)
     Product_Availability = Column(String(255), nullable=True)
     Size = Column(String(255), nullable=True)
