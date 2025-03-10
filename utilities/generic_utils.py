@@ -24,7 +24,6 @@ def get_models(business: str):
     
     try:
         models_module = importlib.import_module(module_name)
-        print(models_module)
         return models_module
     except ModuleNotFoundError:
         raise ValueError(f"Models module {module_name} not found")
