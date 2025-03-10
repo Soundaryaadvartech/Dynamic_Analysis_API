@@ -2,7 +2,7 @@ import os
 import urllib.parse
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.orm import sessionmaker
 from fastapi import HTTPException
 
 
@@ -21,10 +21,9 @@ DATABASES = {
 }
 
 # Maintain separate session makers for each DB
-engines = {name: create_engine(url) for name, url in DATABASES.items()}
+engines = {name: create_engine(url, pool_size=10, max_overflow=5) for name, url in DATABASES.items()}
 session_makers = {name: sessionmaker(bind=eng, autocommit=False, autoflush=False) for name, eng in engines.items()}
 
-Base = declarative_base()
 
 # Function to get the database session dynamically
 def get_db(business: str):

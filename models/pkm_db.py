@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, Date, TIMESTAMP, ForeignKey, DECIMAL, func
-from sqlalchemy.orm import relationship
-from database.database import Base
+from sqlalchemy.orm import relationship, declarative_base
+
+Base = declarative_base()
 
 # Items Table
 class Item(Base):
