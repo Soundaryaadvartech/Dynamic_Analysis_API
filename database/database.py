@@ -26,11 +26,11 @@ session_makers = {name: sessionmaker(bind=eng, autocommit=False, autoflush=False
 Base = declarative_base()
 
 # Function to get the database session dynamically
-def get_db(username: str):
-    if username not in session_makers:
-        raise HTTPException(status_code=400, detail="Invalid username")
+def get_db(business: str):
+    if business not in session_makers:
+        raise HTTPException(status_code=400, detail="Invalid business name")
     
-    db = session_makers[username]()
+    db = session_makers[business]()
     try:
         yield db
     finally:
