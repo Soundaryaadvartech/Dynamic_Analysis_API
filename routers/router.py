@@ -17,8 +17,8 @@ UNIQUE_COLUMN_MAPPINGS = {
     "zing": ["Item_Name", "Item_Type", "Category", "Colour", "__Batch", "Fabric", "Fit", 
                     "Neck", "Occasion", "Print", "Size", "Sleeve", "Mood"],
     
-    "prathiksham": ["Item_Name", "Item_Type", "Category", "Colour", "__Batch", "Fabric", "Fit", "Lining", 
-             "Neck", "Occasion", "Print", "Product_Availability", "Size", "Sleeve", "Bottom_Length", 
+    "prathiksham": ["Item_Name", "Item_Type", "Category", "Colour", "__Batch", "Is_Public","Fabric", "Fit", "Lining", 
+             "Neck", "Occasion", "Print", "Product_Availability", "Size", "Sleeve", "Pack","Bottom_Length", 
              "Bottom_Print", "Bottom_Type", "Collections", "Details", "Pocket", "Top_Length", "Waist_Band"] ,
     
     "beelittle" : [
