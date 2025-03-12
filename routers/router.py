@@ -41,10 +41,18 @@ async def inventory_summary(business: str, days: Optional[int] = None, group_by:
         models = get_models(business)
         summary_df: DataFrame = await run_in_thread(generate_inventory_summary, db, models, days, group_by, business)
 
-        return JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content = json.loads(summary_df.to_json(orient="records"))
-        )
+        # Convert DataFrame to JSON
+        json_data = json.loads(summary_df.to_json(orient="records"))
+
+        # Fixed Pagination (Send Only First 1000 Rows)
+        FIXED_LIMIT = 1000
+        paginated_data = json_data[:FIXED_LIMIT]
+
+        return {
+            "total_records": len(json_data),
+            "returned_records": len(paginated_data),
+            "data": paginated_data
+        }
     
     except Exception:
         traceback.print_exc()
