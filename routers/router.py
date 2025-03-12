@@ -7,6 +7,8 @@ from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import distinct
 from fastapi.responses import JSONResponse
+from fastapi_pagination import paginate, Params
+from fastapi_pagination.default import Page
 from database.database import get_db
 from utilities.utils import generate_inventory_summary
 from utilities.generic_utils import get_dynamic_db, get_models
@@ -34,7 +36,7 @@ async def run_in_thread(fn, *args):
     return await asyncio.to_thread(fn, *args)
 
 @router.get("/inventory_summary")
-async def inventory_summary(business: str, days: Optional[int] = None, group_by: Optional[str] = None, db:Session = Depends(get_dynamic_db)):
+async def inventory_summary(business: str, days: Optional[int] = None, group_by: Optional[str] = None, db:Session = Depends(get_dynamic_db),  params: Params = Depends() ):
     try:
         days = days or 60
         group_by = group_by or "Item_Id"
@@ -44,16 +46,10 @@ async def inventory_summary(business: str, days: Optional[int] = None, group_by:
         # Convert DataFrame to JSON
         json_data = json.loads(summary_df.to_json(orient="records"))
 
-        # Fixed Pagination (Send Only First 1000 Rows)
-        FIXED_LIMIT = 1000
-        paginated_data = json_data[:FIXED_LIMIT]
+        new_params = Params(page=params.page, size=params.size)
 
-        return {
-            "total_records": len(json_data),
-            "returned_records": len(paginated_data),
-            "data": paginated_data
-        }
-    
+        return paginate(json_data, params=new_params)
+
     except Exception:
         traceback.print_exc()
         return  JSONResponse(
