@@ -14,16 +14,18 @@ from utilities.generic_utils import get_dynamic_db, get_models
 router = APIRouter()
 
 UNIQUE_COLUMN_MAPPINGS = {
-    "zing": ["Item_Name", "Item_Type", "Category", "Colour", "__Batch", "Fabric", "Fit", 
-                    "Neck", "Occasion", "Print", "Size", "Sleeve", "Mood"],
+    "zing": ["Item_Name", "Item_Type", "Category","Is_Public", "Colour", "__Batch", "Fabric", "Fit", 
+                    "Neck", "Occasion", "Print", "Size", "Sleeve", "Mood", "__Details", "__Print_Type", 
+                    "__Quadrant", "__Style_Type"],
     
     "prathiksham": ["Item_Name", "Item_Type", "Category", "Colour", "__Batch", "Is_Public","Fabric", "Fit", "Lining", 
              "Neck", "Occasion", "Print", "Product_Availability", "Size", "Sleeve", "Pack","Bottom_Length", 
              "Bottom_Print", "Bottom_Type", "Collections", "Details", "Pocket", "Top_Length", "Waist_Band"] ,
     
     "beelittle" : [
-        "Item_Name", "Item_Type", "Age", "Colour", "Fabric", "Pattern", "Product_Type", "Style", "Weave_Type", 
-        "Print_Colour", "Print_Size", "Print_Theme", "Print_Style"
+        "Item_Name", "Item_Type", "Is_Public","Age", "Bottom","Bundles","Gender","Pack_Size","Pattern","Sale","Size",
+        "Sleeve","Style","Top","Weight","Width","__Season","Colour", "Fabric", "Pattern", "Product_Type", 
+        "Weave_Type", "Print_Colour", "Print_Size", "Print_Theme", "Print_Style", "Print Key Motif",
     ]
 }
 
