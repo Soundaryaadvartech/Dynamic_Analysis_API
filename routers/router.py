@@ -40,7 +40,7 @@ async def run_in_thread(fn, *args):
     """Run blocking function in separate thread to avoid blocking FastAPI"""
     return await asyncio.to_thread(fn, *args)
 
-@router.get("/inventory_summary")
+@router.post("/inventory_summary")
 async def inventory_summary(business: str, filter_request: FilterDataRequest, days: Optional[int] = None, group_by: Optional[str] = None, db:Session = Depends(get_dynamic_db)):
     try:
         days = days or 60
