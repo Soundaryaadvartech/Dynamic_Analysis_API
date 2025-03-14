@@ -13,5 +13,4 @@ for business, engine in engines.items():
     models = get_models(business)
     models.Base.metadata.create_all(bind=engine)
 
-# Set default pagination limit to 1000
 add_pagination(app)
