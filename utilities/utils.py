@@ -3,12 +3,10 @@ import numpy as np
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from functios.period import process_period_data
+from sqlalchemy import and_
 
-
-def generate_inventory_summary(db: Session, models, days: int, group_by: str, business: str):
-    """
-    Generates an inventory summary using SQLAlchemy ORM with optimized performance.
-    """
+def generate_inventory_summary(db: Session, models, days: int, group_by: str, business: str,filter_jason):
+  
     # Validate and set grouping columns
     if group_by.lower() == "item_id":
         grp = ["Item_Id"]
@@ -29,20 +27,34 @@ def generate_inventory_summary(db: Session, models, days: int, group_by: str, bu
     
     if business.lower() in ["prathiksham", "zing"]:
         item_query = db.query(models.Item.Item_Id, models.Item.Item_Name, models.Item.Item_Type, 
-                             models.Item.Item_Code, models.Item.Category, 
+                             models.Item.Item_Code, models.Item.Category,
                              models.Item.Current_Stock, models.Item.launch_date, 
                              models.Item.Sale_Price, models.Item.Sale_Discount, models.Item.batch)
         columns = ["Item_Id", "Item_Name", "Item_Type", "Item_Code", "Category", 
                   "Current_Stock", "__Launch_Date", "Sale_Price", "Sale_Discount", "__Batch"]
     else:  # beelittle
         item_query = db.query(models.Item.Item_Id, models.Item.Item_Name, models.Item.Item_Type, 
-                             models.Item.Item_Code, models.Item.Product_Type, 
+                             models.Item.Item_Code, models.Item.Product_Type,models.Item.Age,models.Item.Discount, 
                              models.Item.Current_Stock, models.Item.launch_date, 
                              models.Item.Sale_Price, models.Item.Sale_Discount, models.Item.batch)
-        columns = ["Item_Id", "Item_Name", "Item_Type", "Item_Code", "Product_Type", 
+        columns = ["Item_Id", "Item_Name", "Item_Type", "Item_Code", "Product_Type","Age","Discount", 
                   "Current_Stock", "__Launch_Date", "Sale_Price", "Sale_Discount", "__Batch"]
-        
     
+    def apply_filters(query, filters):
+        filter_conditions = []
+        for column, values in filters.items():
+            if hasattr(models.Item, column):
+                filter_conditions.append(getattr(models.Item, column).in_(values))
+
+        if filter_conditions:
+            query = query.filter(and_(*filter_conditions))
+    
+        return query
+
+    if filter_jason:
+        item_query = apply_filters(item_query, filter_jason)
+
+        
     # Execute all database queries upfront to minimize DB round trips
     items = item_query.all()
     t1 = pd.DataFrame(items, columns=columns)
@@ -55,15 +67,17 @@ def generate_inventory_summary(db: Session, models, days: int, group_by: str, bu
         dt_attrs = ["Item_Id", "Item_Name", "Item_Type", "Category", 
                     "Colour", "Fabric", "Fit", "Neck", "Occasion", "Print", "Size", "Sleeve"]
     else:  # beelittle
-        dt_attrs = ["Item_Id", "Item_Name", "Item_Type", "Age", "Bottom", "Bundles", "Fabric",
+        dt_attrs = ["Item_Id", "Item_Name", "Item_Type", "Product_Type","Age", "Bottom", "Bundles", "Fabric",
                    "Filling", "Gender", "Pack_Size", "Pattern", "Size", "Sleeve", "Style", 
                    "Top", "Weave_Type", "Weight", "Width"]
     
     # Fetch attributes for dt only if needed for variations
     if group_by.lower() == "item_id":
-        dt_items = db.query(*[getattr(models.Item, attr) for attr in dt_attrs]).all()
-        dt = pd.DataFrame(dt_items, columns=dt_attrs)
-  
+            dt_items = db.query(*[getattr(models.Item, attr) for attr in dt_attrs]).all()
+            dt_values = [list(item) for item in dt_items]  # Convert each ORM object to a list of values
+            dt = pd.DataFrame(dt_values, columns=dt_attrs)
+    else:
+        dt = ""
     # Batch all database queries together
     sales = db.query(models.Sale.Item_Id, models.Sale.Date, models.Sale.Quantity, models.Sale.Total_Value).all()
     viewsatc = db.query(models.ViewsAtc.Item_Id, models.ViewsAtc.Date, models.ViewsAtc.Items_Viewed, models.ViewsAtc.Items_Addedtocart).all()
@@ -153,7 +167,8 @@ def generate_inventory_summary(db: Session, models, days: int, group_by: str, bu
             '__Launch_Date': 'min',
             'Period_Days': 'first',
             'Sale_Price': 'mean',
-            'Sale_Discount': 'mean'
+            'Sale_Discount': 'mean',
+    
         }
         
         t1_agg = t1.groupby(grp, as_index=False).agg(agg_dict)
@@ -177,34 +192,28 @@ def generate_inventory_summary(db: Session, models, days: int, group_by: str, bu
     second_period_df = get_item_summary(t1, t2, t3, days, 2 * days)
 
     # Process both periods
-    first_period_results = process_period_data(t1,t2,t3,t4,t5,temp_t2,t3_total,dt_attrs,colu,days,first_period_df,"first_period",group_by,grp)
+    first_period_results = process_period_data(t1,t2,t3,t4,t5,temp_t2,t3_total,dt,colu,days,first_period_df,"first_period",group_by,grp)
     
     
-    second_period_results = process_period_data(t1,t2,t3,t4,t5,temp_t2,t3_total,dt_attrs,colu,days,second_period_df,"second_period",group_by,grp)
+    second_period_results = process_period_data(t1,t2,t3,t4,t5,temp_t2,t3_total,dt,colu,days,second_period_df,"second_period",group_by,grp)
    
     
     # Ensure both dataframes have necessary columns for item_id grouping
-    if group_by.lower() == "item_id":
-        cols_to_merge = ["Item_Id", "Item_Name", "Item_Type", colu]
-        first_period_results = pd.merge(first_period_results, t1[cols_to_merge].drop_duplicates(), on="Item_Id", how="left")
-        second_period_results = pd.merge(second_period_results, t1[cols_to_merge].drop_duplicates(), on="Item_Id", how="left")
+    
     
     # Define common columns for the combined results
-    common_cols = [
-        "Item_Name", "Item_Type", colu, "__Launch_Date", 
+    common_cols = ["Item_Id",
+        "Item_Name", "Item_Type", colu,"Variations","Sale_Discount", "__Launch_Date", 
         "days_since_launch", "Projected_Days_to_Sellout", "Days_Sold_Out_Past", 
         "Current_Stock", "Total_Stock", "Current_Stock_Value", "Total_Stock_Value", 
-        "Sale_Price", "Sale_Discount", "Sale_Price_After_Discount", "Alltime_Total_Quantity",
+        "Sale_Price", "Sale_Price_After_Discount", "Alltime_Total_Quantity",
         "Alltime_Total_Quantity_Value", "Alltime_Perday_Quantity", "Alltime_Items_Viewed",
         "Alltime_Perday_View", "Alltime_Items_Addedtocart", "Alltime_Perday_ATC",
-        "Total_Stock_Sold_Percentage", "Variations"
+        "Total_Stock_Sold_Percentage" 
     ]
     
-    # Add Item_Id or other columns based on grouping
-    if group_by.lower() == "item_id":
-        common_cols = ["Item_Id", "Item_Code"] + common_cols
-    else:
-        common_cols = ["Item_Id"] + common_cols
+
+  
     
     # Get period-specific columns
     first_period_specific_cols = [col for col in first_period_results.columns 
@@ -216,6 +225,7 @@ def generate_inventory_summary(db: Session, models, days: int, group_by: str, bu
                                   (col.startswith("Predicted_Quantity_Next") and "second_period" in col)]
     
     # Create combined results using a single merge operation when possible
+    print(first_period_results.columns)
     combined_results = first_period_results[common_cols].copy()
     
     # Add first period specific columns
@@ -226,10 +236,11 @@ def generate_inventory_summary(db: Session, models, days: int, group_by: str, bu
     join_cols = ['Item_Id'] if group_by.lower() == "item_id" else grp
     second_period_cols = join_cols + second_period_specific_cols
     combined_results = pd.merge(combined_results, second_period_results[second_period_cols], on=join_cols, how='left')
-    
+    combined_results = combined_results.loc[:, ~combined_results.columns.duplicated()]
     # Final formatting - do this in bulk
     # Round numeric columns
     numeric_cols = combined_results.select_dtypes(include=['number']).columns
+    
     combined_results[numeric_cols] = combined_results[numeric_cols].round(2)
     
     # Format date columns if they exist

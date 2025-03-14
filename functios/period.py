@@ -11,7 +11,7 @@ def process_period_data(t1,t2,t3,t4,t5,temp_t2,t3_total,dt,colu,days,period_df, 
     
     # Calculate derived columns using vectorized operations
     df_final["Total_Stock"] = df_final["Alltime_Total_Quantity"] + df_final["Current_Stock"]
-    df_final["Stock_Sold_Percentage"] = (df_final["Quantity"] / df_final["Total_Stock"] * 100).round(2).fillna(0)
+    df_final["Stock_Sold_Percentage"] = ((df_final["Quantity"] / df_final["Total_Stock"]) * 100).round(2).fillna(0)
     
     # Calculate days since launch
     df_final['__Launch_Date'] = pd.to_datetime(df_final['__Launch_Date'], errors='coerce')
@@ -35,11 +35,15 @@ def process_period_data(t1,t2,t3,t4,t5,temp_t2,t3_total,dt,colu,days,period_df, 
         df_final['Current_Stock'] == 0,
         (df_final['Last_Sold_Date'] - df_final['__Launch_Date']).dt.days,0)
     df_final['Days_Sold_Out_Past'] =df_final['Days_Sold_Out_Past'].fillna(0)
-    
+    if period_name == "first_period":
+        df_final["days_left"] = np.where(df_final["days_since_launch"] > days,days,df_final["days_since_launch"])
+    else:
+        df_final["days_left"] = np.where(df_final["days_since_launch"] > 2*days,days,df_final["days_since_launch"] - days)
+
     # Calculate period-specific metrics using vectorized operations
-    df_final["Period_Perday_Quantity"] = df_final["Quantity"] / df_final["Period_Days"]
-    df_final["Period_Perday_View"] = df_final["Items_Viewed"] / df_final["Period_Days"]
-    df_final["Period_Perday_ATC"] = df_final["Items_Addedtocart"] / df_final["Period_Days"]
+    df_final["Period_Perday_Quantity"] = df_final["Quantity"] / df_final["days_left"]
+    df_final["Period_Perday_View"] = df_final["Items_Viewed"] / df_final["days_left"]
+    df_final["Period_Perday_ATC"] = df_final["Items_Addedtocart"] / df_final["days_left"]
     
     # All-time per-day metrics using numpy for vectorized operations
     df_final["Alltime_Perday_Quantity"] = np.where(
@@ -81,6 +85,11 @@ def process_period_data(t1,t2,t3,t4,t5,temp_t2,t3_total,dt,colu,days,period_df, 
         df_final["Period_Perday_Quantity"] * days,
         0
     )
+    if group_by.lower() == "item_id":
+        df_var = create_variations_dataframe(dt, colu)
+        df_final = pd.merge(df_final, df_var, how="left", on="Item_Id")
+    else:
+        df_final["Variations"] = "No variations"
     
     # Add period identifier
     df_final["Period"] = period_name
@@ -99,14 +108,7 @@ def process_period_data(t1,t2,t3,t4,t5,temp_t2,t3_total,dt,colu,days,period_df, 
     }
     
     # Add variations data if using Item_Id grouping
-    if group_by.lower() == "item_id":
-        try:
-            var1 = create_variations_dataframe(dt, colu)
-            df_final = pd.merge(df_final, var1[["Item_Id", "Variations"]], how="left", on="Item_Id")
-        except Exception:
-            df_final["Variations"] = ""
-    else:
-        df_final["Variations"] = ""
+   
     
     # Rename period-specific columns
     df_final = df_final.rename(columns=period_specific_columns)

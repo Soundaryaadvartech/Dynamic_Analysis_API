@@ -4,6 +4,7 @@ import json
 import asyncio
 from pandas import DataFrame
 from typing import Optional
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, status, HTTPException 
 from sqlalchemy.orm import Session
 from sqlalchemy import distinct
@@ -32,17 +33,20 @@ UNIQUE_COLUMN_MAPPINGS = {
     ]
 }
 
+class FilterDataRequest(BaseModel):
+    filter_jason: dict
+
 async def run_in_thread(fn, *args):
     """Run blocking function in separate thread to avoid blocking FastAPI"""
     return await asyncio.to_thread(fn, *args)
 
 @router.get("/inventory_summary")
-async def inventory_summary(business: str, days: Optional[int] = None, group_by: Optional[str] = None, db:Session = Depends(get_dynamic_db)):
+async def inventory_summary(business: str, filter_request: FilterDataRequest, days: Optional[int] = None, group_by: Optional[str] = None, db:Session = Depends(get_dynamic_db)):
     try:
         days = days or 60
         group_by = group_by or "Item_Id"
         models = get_models(business)
-        summary_df: DataFrame = await run_in_thread(generate_inventory_summary, db, models, days, group_by, business)
+        summary_df: DataFrame = await run_in_thread(generate_inventory_summary, db, models, days, group_by, business, filter_request.filter_jason)
 
         # Convert DataFrame to CSV and stream it
         stream = io.StringIO()
