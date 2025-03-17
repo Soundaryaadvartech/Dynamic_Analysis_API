@@ -225,6 +225,7 @@ def generate_inventory_summary(db: Session, models, days: int, group_by: str, bu
                                   (col.startswith("Predicted_Quantity_Next") and "second_period" in col)]
     
     # Create combined results using a single merge operation when possible
+    print(first_period_results.columns)
     combined_results = first_period_results[common_cols].copy()
     
     # Add first period specific columns
