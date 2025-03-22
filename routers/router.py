@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import distinct
 from fastapi.responses import JSONResponse
-from database.database import get_db
+from database.database import get_db, get_business_name
 from utilities.utils import generate_inventory_summary
 from utilities.generic_utils import get_dynamic_db, get_models
 from utilities.filter_data import get_filter_data
@@ -32,6 +32,7 @@ async def inventory_summary(business: str,filter_request: FilterDataRequest, day
         group_by = group_by or "Item_Id"
         models = get_models(business)
         print(filter_request.filter_jason)
+        business = get_business_name(business)
         summary_df: DataFrame = await run_in_thread(generate_inventory_summary, db, models, days, group_by, business,filter_request.filter_jason)
 
         # Convert DataFrame to CSV and stream it
@@ -57,6 +58,8 @@ async def get_table(business: str, db: Session = Depends(get_dynamic_db)):
         print(f"Fetching filter data for business: {business}")  # Log business name
         models = get_models(business)
         print(f"Using models: {models}")  # Log models
+        business = get_business_name(business)
+        print(f"Using business:{business}")
         filter_data = await run_in_thread(get_filter_data, db, models, business)
 
         if filter_data.empty:  

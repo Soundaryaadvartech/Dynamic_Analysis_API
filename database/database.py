@@ -15,9 +15,9 @@ DB_HOST = os.getenv("DB_HOST")
 
 # Dictionary of database connections
 DATABASES = {
-    "zing": f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/zing",
-    "prathiksham": f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/prathiksham",
-    "beelittle": f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/beelittle"
+    "ZNG45F8J27LKMNQ": f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/zing",
+    "PRT9X2C6YBMLV0F": f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/prathiksham",
+    "BEE7W5ND34XQZRM": f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/beelittle"
 }
 
 # Maintain separate session makers for each DB
@@ -35,3 +35,14 @@ def get_db(business: str):
         yield db
     finally:
         db.close()
+
+# Mapping of business codes to actual business names
+BUSINESS_CODE_MAP = {
+    "ZNG45F8J27LKMNQ": "zing",
+    "PRT9X2C6YBMLV0F": "prathiksham",
+    "BEE7W5ND34XQZRM": "beelittle"
+}
+
+def get_business_name(business_code: str) -> str:
+    """Convert business code to business name."""
+    return BUSINESS_CODE_MAP.get(business_code, None)

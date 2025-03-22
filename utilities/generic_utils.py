@@ -3,11 +3,10 @@ from database.database import get_db
 
 # Dictionary mapping business name to the correct models file
 MODEL_FILES = {
-    "zing": "models.zing_db",  
-    "prathiksham": "models.pkm_db",
-    "beelittle":"models.bee_db"
+    "ZNG45F8J27LKMNQ": "models.zing_db",  
+    "PRT9X2C6YBMLV0F": "models.pkm_db",
+    "BEE7W5ND34XQZRM": "models.bee_db"
 }
-
 
 def get_dynamic_db(business: str):
     if business is None:
